@@ -13,11 +13,13 @@
 // ═══════════ 参数 ═══════════
 var LEVERAGE     = 10;       // 杠杆 (交易所最大可用，建议10-20x快速翻倍)
 var BASE_AMOUNT  = 10;       // 首单USDT
-var MULTIPLIER   = 2.0;      // 加仓倍数
+var MULTIPLIER   = 1.2;      // 前4层倍率 (1.2x快速积累)
+var MULT_LATE    = 1.1;      // 后6层倍率 (1.1x保命)
 var MAX_LEVEL    = 10;       // 最大层数
-var DIST_PCT     = 1.0;      // 加仓触发%
+var DIST_PCT     = null;     // 间距(ATR动态算)
 var REBOUND_PCT  = 0.3;      // 反弹确认%
-var TARGET_USDT  = 20;       // 止盈USDT
+var TARGET_PCT   = null;     // 止盈%(ATR动态算)
+var TARGET_USDT  = null;     // 止盈U(ATR动态算)
 var MAX_DD       = 0.40;     // 回撤锁死
 var RESCAN_HOURS = 24;       // 重新扫描间隔(小时)
 
@@ -25,6 +27,14 @@ var RESCAN_HOURS = 24;       // 重新扫描间隔(小时)
 var AMPL_MIN = 3, AMPL_MAX = 12, MIN_VOL = 500000;
 var MAX_COIN_PRICE = 500;   // 排除单价>$500的币（BTC/ETH/BCH等太贵，10U买不到1张）
 var BLACKLIST = ["BTC","ETH","BCH","LTC","LINK","UNI","DOT","XRP","ADA","AVAX","ATOM","FIL","ETC"];
+
+function _atr(records, period) {
+  period=period||14; let len=records.length, tr=[];
+  for(let i=1;i<len;i++) tr.push(Math.max(records[i].High-records[i].Low, Math.abs(records[i].High-records[i-1].Close), Math.abs(records[i].Low-records[i-1].Close)));
+  let a=1/period, r=[tr.slice(0,period).reduce((s,x)=>s+x)/period];
+  for(let i=period;i<tr.length;i++) r.push(a*tr[i]+(1-a)*r[r.length-1]);
+  return r[r.length-1];
+}
 
 // ═══════════ 持久化 ═══════════
 function load() { return _G("nbmb3") || { level:1, round:0, peak:0, locked:false, extracted:0, coin:"", lastScan:0 }; }
@@ -187,40 +197,50 @@ function main() {
       var sig=entrySignal(recs);
       if(sig.d){
         Log("🎯 "+sig.desc);
-        var entryPrice=sig.d==='long'?price-price*DIST_PCT/100:price+price*DIST_PCT/100;
+        // ATR动态间距和止盈
+        var atrVal=_atr(recs,14), atrPct=atrVal/price*100;
+        var distPct=atrPct*1.0, targetPct=atrPct*4.0;
+        var entryPrice=sig.d==='long'?price*(1-distPct/100):price*(1+distPct/100);
         trade(sig.d==='long'?"buy":"sell",entryPrice,BASE_AMOUNT);
-        st.level=1;st.dir=sig.d;save(st);
+        st.level=1;st.dir=sig.d;st.atrPct=atrPct;st.targetPct=targetPct;save(st);
       }
     }
 
     // 多仓→马丁管理
     if(pos.length>0&&pos[0].Type===0){
-      let p=pos[0];
-      if(p.Profit>=TARGET_USDT){Log("💰 做多止盈+"+p.Profit.toFixed(2)+"USDT");trade("closebuy",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
-      let addAt=p.Price*(1-DIST_PCT/100),lowest=_G("nbmb_low")||price;
+      let p=pos[0],atrPct=st.atrPct||1;
+      let targetU=p.Amount*p.Price*atrPct/100*4; // TP=ATR×4
+      if(p.Profit>=targetU){Log("💰 做多止盈+"+p.Profit.toFixed(2)+"U(ATR止盈)");trade("closebuy",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
+      let distPct=atrPct*1.0;
+      let addAt=p.Price*(1-distPct/100),lowest=_G("nbmb_low")||price;
       if(price<lowest)_G("nbmb_low",price);
       if(price>lowest*(1+REBOUND_PCT/100)&&price<=addAt&&st.level<MAX_LEVEL){
-        let amt=BASE_AMOUNT*Math.pow(MULTIPLIER,st.level);
-        Log("📉 多仓加L"+(st.level+1)+": "+amt.toFixed(1)+"USDT");
+        // 分层倍率: 前4层1.2x, 后6层1.1x
+        let mult=st.level<=4?MULTIPLIER:MULT_LATE;
+        let amt=BASE_AMOUNT*Math.pow(mult,st.level);
+        Log("📉 多仓加L"+(st.level+1)+": "+amt.toFixed(1)+"U(×"+mult.toFixed(1)+")");
         cancelAll();trade("buy",price,amt);st.level++;_G("nbmb_low",price);save(st);continue;
       }
       var orders=_C(exchange.GetOrders);
-      if(!orders.some(o=>o.Type===1))trade("closebuy",Math.max(p.Price+TARGET_USDT,price+TARGET_USDT),p.Amount);
+      if(!orders.some(o=>o.Type===1))trade("closebuy",Math.max(p.Price+targetU,price+targetU),p.Amount);
     }
 
     // 空仓→马丁管理
     if(pos.length>0&&pos[0].Type===1){
-      let p=pos[0];
-      if(p.Profit>=TARGET_USDT){Log("💰 做空止盈+"+p.Profit.toFixed(2)+"USDT");trade("closesell",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
-      let addAt=p.Price*(1+DIST_PCT/100),highest=_G("nbmb_high")||price;
+      let p=pos[0],atrPct=st.atrPct||1;
+      let targetU=p.Amount*p.Price*atrPct/100*4;
+      if(p.Profit>=targetU){Log("💰 做空止盈+"+p.Profit.toFixed(2)+"U(ATR止盈)");trade("closesell",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
+      let distPct=atrPct*1.0;
+      let addAt=p.Price*(1+distPct/100),highest=_G("nbmb_high")||price;
       if(price>highest)_G("nbmb_high",price);
       if(price<highest*(1-REBOUND_PCT/100)&&price>=addAt&&st.level<MAX_LEVEL){
-        let amt=BASE_AMOUNT*Math.pow(MULTIPLIER,st.level);
-        Log("📈 空仓加L"+(st.level+1)+": "+amt.toFixed(1)+"USDT");
+        let mult=st.level<=4?MULTIPLIER:MULT_LATE;
+        let amt=BASE_AMOUNT*Math.pow(mult,st.level);
+        Log("📈 空仓加L"+(st.level+1)+": "+amt.toFixed(1)+"U(×"+mult.toFixed(1)+")");
         cancelAll();trade("sell",price,amt);st.level++;_G("nbmb_high",price);save(st);continue;
       }
       var orders=_C(exchange.GetOrders);
-      if(!orders.some(o=>o.Type===2))trade("closesell",Math.min(p.Price-TARGET_USDT,price-TARGET_USDT),p.Amount);
+      if(!orders.some(o=>o.Type===2))trade("closesell",Math.min(p.Price-targetU,price-targetU),p.Amount);
     }
 
     save(st);

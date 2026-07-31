@@ -189,10 +189,12 @@ async function main() {
   if (results.length===0) { console.log('❌ 无候选'); process.exit(0); }
 
   function printCoin(r, rank) {
-    let ampl=+r.amp, price=+swaps.find(s=>s.instId.includes(r.symbol))?.last||50;
-    let addPct=(ampl*0.15).toFixed(2), tpPct=(ampl*0.3).toFixed(2);
-    let mult=1.1, totalAmt=0, amt=10;
-    for(let l=0;l<8;l++){totalAmt+=amt;amt*=mult;}
+    let ampl=+r.amp, adx=+r.adx, price=+swaps.find(s=>s.instId.includes(r.symbol))?.last||50;
+    let addPct=(ampl*0.2).toFixed(2);      // 间距=振幅×0.2
+    let tpPct=(ampl*0.8).toFixed(2);       // ATR止盈≈振幅×0.8
+    let tierMult='前4层1.2x/后6层1.1x';    // 分层倍率
+    let totalAmt=0, amt=10, mults=[1.2,1.2,1.2,1.2,1.1,1.1,1.1,1.1];
+    for(let l=0;l<8;l++){totalAmt+=amt;amt*=mults[l];}
     let lev,levNote;
     if(+r.adx<10&&ampl>=5){lev=20;levNote='20x激进翻倍';}
     else if(+r.adx<12&&ampl>=4){lev=15;levNote='15x快速翻倍';}
@@ -206,12 +208,13 @@ async function main() {
     console.log(`| 参数 | 建议值 | 说明 |`);
     console.log(`|------|--------|------|`);
     console.log(`| 方向 | ${r.bullish?'🟢做多':'🔴做空'} | EMA排列 |`);
-    console.log(`| 跌加仓 | ${addPct}% | 振幅${r.amp}% × 0.15 |`);
-    console.log(`| 止盈 | ${tpPct}% | 振幅${r.amp}% × 0.3 |`);
+    console.log(`| 跌加仓 | ${addPct}% | 振幅${r.amp}% × 0.2(Auto) |`);
+    console.log(`| 止盈 | ${tpPct}% | ATR×4.0 ≈ 振幅×0.8 |`);
+    console.log(`| 加仓倍数 | ${tierMult} | 前4层加速+后6层保命 |`);
     console.log(`| 杠杆 | **${lev}x** | ${levNote} |`);
     console.log(`| 首单保证金 | ~${(10/lev).toFixed(1)}U | 10U名义/${lev}x |`);
-    console.log(`| 8层总保证金 | ~${marginTotal}U | ∑10×1.1^层/${lev}x |`);
-    console.log(`| 预估强平 | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
+    console.log(`| 8层总保证金 | ~${marginTotal}U | 分层倍率/杠杆 |`);
+    console.log(`| 预估强平 | ~${liqEst} | 振幅5.8%×1.5 |`);
     console.log(`| ADX | ${r.adx} | <25震荡✅ | 振幅${r.amp}% |`);
     return {symbol:r.symbol,score:r.score,dir:r.bullish?'做多':'做空',addPct,tpPct,lev,marginTotal};
   }
