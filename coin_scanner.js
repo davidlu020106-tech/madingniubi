@@ -194,15 +194,15 @@ async function main() {
   let tpPct = (ampl * 0.3).toFixed(2);
   let mult = 1.5, totalAmt = 0, amt = 10;
   for (let l=0; l<8; l++) { totalAmt += amt; amt *= mult; }
-  let marginTotal = (totalAmt / lev).toFixed(0);
-  let liqEst = (price * (1 - ampl * 1.5 / 100)).toFixed(4);
-  // 杠杆建议: 优先快速翻倍（10-20x），高ADX时保守
+  // 杠杆建议
   let lev, levNote;
   if (+r.adx<10 && ampl>=5)      { lev=20; levNote='极震+高振幅，激进20x翻倍'; }
   else if (+r.adx<12 && ampl>=4) { lev=15; levNote='低ADX+足振幅，15x快速翻倍'; }
   else if (+r.adx<15 && ampl>=3) { lev=10; levNote='标准震荡，10x稳翻倍'; }
   else if (+r.adx<20)            { lev=8;  levNote='ADX偏高，8x谨慎'; }
   else                           { lev=5;  levNote='震荡不纯，5x保守'; }
+  let marginTotal = (totalAmt / lev).toFixed(0);
+  let liqEst = (price * (1 - ampl * 1.5 / 100)).toFixed(4);
 
   console.log(`\n## 🔥 OKX马丁 — 今日最佳币种\n`);
   console.log(`| 参数 | 建议值 | 说明 |`);
