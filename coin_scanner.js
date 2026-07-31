@@ -191,7 +191,7 @@ async function main() {
   function printCoin(r, rank) {
     let ampl=+r.amp, price=+swaps.find(s=>s.instId.includes(r.symbol))?.last||50;
     let addPct=(ampl*0.15).toFixed(2), tpPct=(ampl*0.3).toFixed(2);
-    let mult=1.5, totalAmt=0, amt=10;
+    let mult=1.1, totalAmt=0, amt=10;
     for(let l=0;l<8;l++){totalAmt+=amt;amt*=mult;}
     let lev,levNote;
     if(+r.adx<10&&ampl>=5){lev=20;levNote='20x激进翻倍';}
@@ -210,7 +210,7 @@ async function main() {
     console.log(`| 止盈 | ${tpPct}% | 振幅${r.amp}% × 0.3 |`);
     console.log(`| 杠杆 | **${lev}x** | ${levNote} |`);
     console.log(`| 首单保证金 | ~${(10/lev).toFixed(1)}U | 10U名义/${lev}x |`);
-    console.log(`| 8层总保证金 | ~${marginTotal}U | ∑首单×1.5^层/${lev}x |`);
+    console.log(`| 8层总保证金 | ~${marginTotal}U | ∑10×1.1^层/${lev}x |`);
     console.log(`| 预估强平 | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
     console.log(`| ADX | ${r.adx} | <25震荡✅ | 振幅${r.amp}% |`);
     return {symbol:r.symbol,score:r.score,dir:r.bullish?'做多':'做空',addPct,tpPct,lev,marginTotal};
@@ -220,7 +220,7 @@ async function main() {
   console.log(`\n## 🔥 OKX马丁 — 今日Top3 (${results.length}候选)\n`);
   let summaries = [];
   for (let i=0;i<top.length;i++) summaries.push(printCoin(top[i],i+1));
-  console.log(`\n> 排除BTC/ETH等大市值 | 振幅1-18% ADX<25 | 50币扫出${results.length}候选\n`);
+  console.log(`\n> ${results.length}候选 | 加仓倍数1.1× | 排除大市值 | 振幅1-18%\n`);
 
   // GitHub Summary
   if (process.env.GITHUB_STEP_SUMMARY) {
