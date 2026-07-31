@@ -15,11 +15,13 @@ const BLACKLIST = new Set(['BTC','ETH','BCH','LTC','LINK','UNI','DOT','XRP','ADA
 // ─── OKX HTTP 请求 ───
 function okxGet(path) {
   return new Promise((resolve, reject) => {
-    https.get({ hostname:'www.okx.com', path, headers:{'User-Agent':'nbmb/1.0'}, timeout:15000 }, res => {
+    let timer = setTimeout(() => { req.destroy(); resolve(null); }, 8000);
+    let req = https.get({ hostname:'www.okx.com', path, headers:{'User-Agent':'nbmb/1.0'}, timeout:8000 }, res => {
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
-    }).on('error', e => { console.error(`[OKX] ${path}: ${e.message}`); resolve(null); });
+      res.on('end', () => { clearTimeout(timer); try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+    });
+    req.on('error', e => { clearTimeout(timer); resolve(null); });
   });
 }
 
@@ -172,9 +174,10 @@ async function main() {
     let last = +swaps[i].last || records[records.length-1].close;
     let r = score(records, {instId, last});
     if (r) { r.vol24h = swaps[i].vol24h || '?'; results.push(r); }
-    if ((i+1) % 50 === 0) console.log(`  ... ${i+1}/${swaps.length}`);
-    await sleep(80);
+    if ((i+1) % 10 === 0) process.stdout.write(`\r  📊 ${i+1}/${swaps.length} (${results.length}候选)`);
+    await sleep(150);
   }
+  process.stdout.write('\n');
 
   results.sort((a,b)=>b.score-a.score);
   if (results.length===0) { console.log('❌ 无候选'); process.exit(0); }
