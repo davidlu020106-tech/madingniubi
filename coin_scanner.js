@@ -154,8 +154,10 @@ async function main() {
   let tickers = await okxGet('/api/v5/market/tickers?instType=SWAP');
   if (!tickers || !tickers.data) { console.error('❌ 获取行情失败'); process.exit(1); }
 
-  let swaps = tickers.data.filter(t => t.instId.endsWith('-USDT-SWAP'));
-  console.log(`📡 共 ${swaps.length} 个 USDT 永续合约，开始扫描...\n`);
+  let swaps = tickers.data.filter(t => t.instId.endsWith('-USDT-SWAP'))
+    .sort((a,b) => (+b.vol24h) - (+a.vol24h))
+    .slice(0, 100);
+  console.log(`📡 交易量前100名，开始扫描...\n`);
 
   let results = [];
   for (let i = 0; i < swaps.length; i++) {

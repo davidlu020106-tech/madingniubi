@@ -69,18 +69,23 @@ function scoreCoin(records) {
 
 // ═══════════ 扫全市场 ═══════════
 function scanMarket() {
-  Log("🔍 扫描全市场震荡币...");
-  let info = exchange.IO("api","GET","/api/v5/public/instruments?instType=SWAP");
-  if(!info||!info.data){Log("❌ 获取合约列表失败");return[];}
-  let results=[],swaps=info.data.filter(s=>s.instId.endsWith("-USDT-SWAP"));
-  for(let i=0;i<swaps.length;i++){
-    let id=swaps[i].instId, sym=id.replace("-USDT-SWAP","");
+  Log("🔍 获取交易量前100名...");
+  // 先拿行情排序取前100
+  let tkrs=exchange.IO("api","GET","/api/v5/market/tickers?instType=SWAP");
+  if(!tkrs||!tkrs.data){Log("❌ 获取行情失败");return[];}
+  let sorted=tkrs.data.filter(t=>t.instId.endsWith("-USDT-SWAP")).sort((a,b)=>(+b.vol24h)-(+a.vol24h));
+  let top100=sorted.slice(0,100);
+  Log("✅ 交易量Top100: "+top100[0].instId+"("+top100[0].vol24h+") ~ "+top100[top100.length-1].instId);
+  let results=[];
+  for(let i=0;i<top100.length;i++){
+    let sym=top100[i].instId.replace("-USDT-SWAP","");
+    let id=top100[i].instId, sym=id.replace("-USDT-SWAP","");
     exchange.SetCurrency(sym+"_USDT");
     let recs=_C(exchange.GetRecords,PERIOD_D1);
     if(!recs||recs.length<30)continue;
     let r=scoreCoin(recs);
     if(r){r.symbol=sym;results.push(r);}
-    if((i+1)%50===0)Log("  ..."+ (i+1)+"/"+swaps.length);
+    if((i+1)%20===0)Log("  ..."+ (i+1)+"/"+top100.length);
   }
   results.sort((a,b)=>b.score-a.score);
   Log("✅ 扫描完成: "+results.length+"个候选, Top5:");
