@@ -187,12 +187,13 @@ async function main() {
   for (let l=0; l<8; l++) { totalAmt += amt; amt *= mult; }
   let marginTotal = (totalAmt / lev).toFixed(0);
   let liqEst = (price * (1 - ampl * 1.5 / 100)).toFixed(4);
-  // 杠杆建议: 高振幅低ADX → 低杠杆(币自己波动够大), 低振幅 → 高杠杆(需要放大)
-  let lev;
-  if (ampl>=5 && +r.adx<12) lev = 3;
-  else if (ampl>=4 && +r.adx<15) lev = 4;
-  else if (ampl>=3 && +r.adx<20) lev = 5;
-  else lev = 2;
+  // 杠杆建议: 优先快速翻倍（10-20x），高ADX时保守
+  let lev, levNote;
+  if (+r.adx<10 && ampl>=5)      { lev=20; levNote='极震+高振幅，激进20x翻倍'; }
+  else if (+r.adx<12 && ampl>=4) { lev=15; levNote='低ADX+足振幅，15x快速翻倍'; }
+  else if (+r.adx<15 && ampl>=3) { lev=10; levNote='标准震荡，10x稳翻倍'; }
+  else if (+r.adx<20)            { lev=8;  levNote='ADX偏高，8x谨慎'; }
+  else                           { lev=5;  levNote='震荡不纯，5x保守'; }
 
   console.log(`\n## 🔥 OKX马丁 — 今日最佳币种\n`);
   console.log(`| 参数 | 建议值 | 说明 |`);
@@ -204,7 +205,7 @@ async function main() {
   console.log(`| **加仓倍数** | ${mult.toFixed(1)}× | 马丁倍率 |`);
   console.log(`| **最大加仓次数** | 8 次 | 可扛回撤~${(ampl*1.5*0.8).toFixed(1)}% |`);
   console.log(`| **初次下单金额** | 10 USDT | 首单保证金 ~${(10/lev).toFixed(1)}U(${lev}x) |`);
-  console.log(`| **杠杆倍数** | **${lev}x** | 振幅${r.amp}% ADX${r.adx} → ${lev}x`);
+  console.log(`| **杠杆倍数** | **${lev}x** | ${levNote} |`);
   console.log(`| **投入保证金(8层)** | ~${marginTotal} USDT | ∑首单×1.5^层 / ${lev}x杠杆 |`);
   console.log(`| **预估强平价** | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
   console.log(`| **止损建议** | 均价-${(ampl*2).toFixed(1)}% | 振幅×2 硬止损 |`);
