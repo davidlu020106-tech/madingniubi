@@ -1,30 +1,24 @@
 # 牛逼马丁不死不休 💪
 
-马丁内核 + 可插拔模块的量化交易系统
+快速翻倍 + 接受爆仓 + 信号止损 — 马丁量化交易系统
 
 [![震荡币扫描](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml/badge.svg)](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml)
 
-## 运行方式
+## 文件速查
 
-| 文件 | 用途 | 怎么跑 |
+| 文件 | 用途 | 在哪跑 |
 |------|------|--------|
-| `coin_scanner.js` | **选币器** ★ | `node coin_scanner.js` 或 GitHub Actions 自动跑 |
-| `fmz_martin.js` | 马丁策略 | 粘贴到 FMZ 策略编辑器 |
-| `fmz_coin_scanner.js` | 选币器(FMZ版) | 粘贴到 FMZ 策略编辑器 |
+| `coin_scanner.js` | ✅ 选币器（5维评分） | `node` / GitHub Actions |
+| `fmz_double_martin.js` | ✅ **翻倍马丁策略**（新） | FMZ 策略编辑器 |
+| `fmz_martin.js` | 马丁核心骨架 | FMZ |
+| `fmz_coin_scanner.js` | 选币器(FMZ版) | FMZ |
 
-## 选币 5维评分
+## 策略设计
 
-`振幅(25) + 震荡纯度(30) + 波动率(20) + 成交量(15) + 趋势(10) = 100分`
+**三层架构**: 入场信号(MACD+KDJ) → 马丁翻倍(multiplier=2.0,10层) → 信号终止(回撤40%+均线反转)
 
-- 振幅 3%-12%，ADX < 25，无异动放量 → 候选
-- 得分 ≥ 70 → ⭐推荐，≥ 80 → 🔥强烈推荐
+详见 `docs/strategy_design.md`
 
-## CI 自动扫描
+## CI
 
-每天北京时间 8:00 和 20:00 自动跑 `coin_scanner.js`，结果在 [Actions](https://github.com/davidlu020106-tech/madingniubi/actions) 页面查看。
-
-## 设计文档
-
-- `docs/coin_screener_design.md` — 5维评分系统完整设计
-- `docs/coin_screening_analysis.md` — 120个FMZ策略分析
-- `docs/fmz_references.md` — FMZ参考策略索引
+每天 8:00/20:00 自动扫描 → [Actions](https://github.com/davidlu020106-tech/madingniubi/actions)
