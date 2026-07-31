@@ -78,17 +78,17 @@ function scanMarket() {
   Log("✅ 交易量Top100: "+top100[0].instId+"("+top100[0].vol24h+") ~ "+top100[top100.length-1].instId);
   let results=[];
   for(let i=0;i<top100.length;i++){
-    let sym=top100[i].instId.replace("-USDT-SWAP","");
     let id=top100[i].instId, sym=id.replace("-USDT-SWAP","");
     exchange.SetCurrency(sym+"_USDT");
     let recs=_C(exchange.GetRecords,PERIOD_D1);
     if(!recs||recs.length<30)continue;
     let r=scoreCoin(recs);
-    if(r){r.symbol=sym;results.push(r);}
+    if(r && r.bull){ r.symbol=sym; results.push(r); }
     if((i+1)%20===0)Log("  ..."+ (i+1)+"/"+top100.length);
   }
   results.sort((a,b)=>b.score-a.score);
-  Log("✅ 扫描完成: "+results.length+"个候选, Top5:");
+  Log("✅ 扫描完成: "+results.length+"个候选(🟢多头), Top5:");
+  if(results.length===0){Log("⚠️ 无多头排列的震荡币，1小时后重试");return[];} 
   for(let i=0;i<Math.min(5,results.length);i++){
     let r=results[i],dir=r.bull?"🟢":"🔴";
     Log("  "+(i+1)+". "+dir+" "+r.symbol+" ("+r.score+"分) 振幅"+r.amp+"% ADX"+r.adx);
@@ -118,6 +118,7 @@ function trade(dir,price,amt){exchange.SetDirection(dir);if(dir==="buy")return e
 
 // ═══════════ 主循环 ═══════════
 function main() {
+  exchange.IO("simulate", true);  // 模拟账户专用
   exchange.SetContractType("swap");
   exchange.SetMarginLevel(LEVERAGE);
   exchange.SetPrecision(2,2);
