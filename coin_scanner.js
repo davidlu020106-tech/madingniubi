@@ -118,7 +118,8 @@ function score(records, ticker) {
   if(bb>0.3&&bb<0.7)s2+=5; else if(bb>0.2&&bb<0.8)s2+=3;
   if(sx>=4)s2+=5; else if(sx>=2)s2+=3; else if(sx>=1)s2+=1;
 
-  // ── ③ 波动率 (20) ── 收紧：ATR/价格<2%的大幅扣分
+  // ── ③ 波动率 (20) ──
+  let s3=0;
   let atrPct=amp.avgAmpl*1.2;
   if(atrPct>=3&&atrPct<=5)s3+=20; else if(atrPct>=2.5&&atrPct<=6)s3+=14; else if(atrPct>=2&&atrPct<=7)s3+=8; else s3+=3;
 
