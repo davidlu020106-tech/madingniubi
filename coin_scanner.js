@@ -160,14 +160,20 @@ async function main() {
 
   let swaps = tickers.data.filter(t => t.instId.endsWith('-USDT-SWAP'))
     .sort((a,b) => (+b.vol24h) - (+a.vol24h))
-    .slice(0, 100);
-  console.log(`📡 交易量前100名，开始扫描...\n`);
+    .slice(0, 50);
+  console.log(`📡 交易量前50名，预筛选后扫描...\n`);
 
   let results = [];
   for (let i = 0; i < swaps.length; i++) {
     let instId = swaps[i].instId, symbol = instId.replace('-USDT-SWAP','');
     if (BLACKLIST.has(symbol)) continue;
     if (+swaps[i].last > MAX_COIN_PRICE) continue;
+    // ticker预筛选: 24h振幅明显不达标的直接跳过
+    let hi24 = +swaps[i].high24h, lo24 = +swaps[i].low24h, op24 = +swaps[i].open24h;
+    if (hi24 && lo24 && op24) {
+      let ampl24 = (hi24-lo24)/op24*100;
+      if (ampl24 < 1.5 || ampl24 > 15) continue;
+    }
     let candles = await okxGet(`/api/v5/market/candles?instId=${instId}&bar=1D&limit=35`);
     if (!candles || !candles.data || candles.data.length < 30) continue;
     let records = candles.data.reverse().map(c => ({ open:+c[1], high:+c[2], low:+c[3], close:+c[4], vol:+c[5] }));
