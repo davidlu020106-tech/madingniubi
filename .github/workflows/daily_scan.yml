@@ -22,6 +22,9 @@ jobs:
       - name: 🔍 扫描震荡币
         run: node coin_scanner.js | tee result.md
 
+      - name: 📋 更新 Summary 面板
+        run: cat result.md >> $GITHUB_STEP_SUMMARY
+
       - name: 📊 保存结果
         uses: actions/upload-artifact@v4
         with:
