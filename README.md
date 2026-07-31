@@ -1,41 +1,30 @@
 # 牛逼马丁不死不休 💪
 
-马丁内核 + 可插拔模块的量化交易系统 — **部署在 FMZ（发明者量化）平台**
+马丁内核 + 可插拔模块的量化交易系统
 
-> **⚠️ 语言规则: 运行代码一律用 JavaScript（FMZ支持最全），Python 仅用于离线分析**
+[![震荡币扫描](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml/badge.svg)](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml)
 
-## 项目结构
+## 运行方式
 
-```
-nbmb/
-├── fmz_martin.js          # ★ 马丁核心循环（FMZ可运行）
-├── fmz_coin_scanner.js    # ★ 震荡币筛选器（FMZ可运行）
-├── nbmb.py                # Python入口（离线分析）
-├── README.md
-└── docs/
-    ├── fmz_references.md      # FMZ策略参考索引
-    ├── coin_screening_analysis.md  # 120个策略分析
-    └── coin_screener_design.md     # 选币系统设计方案
-```
+| 文件 | 用途 | 怎么跑 |
+|------|------|--------|
+| `coin_scanner.js` | **选币器** ★ | `node coin_scanner.js` 或 GitHub Actions 自动跑 |
+| `fmz_martin.js` | 马丁策略 | 粘贴到 FMZ 策略编辑器 |
+| `fmz_coin_scanner.js` | 选币器(FMZ版) | 粘贴到 FMZ 策略编辑器 |
 
-## 快速使用
+## 选币 5维评分
 
-### 1. 先跑筛币 → 找到适合马丁的币
-打开 FMZ 策略编辑器 → 新建 JS 策略 → 粘贴 `fmz_coin_scanner.js` → 运行
+`振幅(25) + 震荡纯度(30) + 波动率(20) + 成交量(15) + 趋势(10) = 100分`
 
-### 2. 再跑马丁 → 用筛选出的币跑马丁
-打开 FMZ 策略编辑器 → 新建 JS 策略 → 粘贴 `fmz_martin.js` → 修改币种 → 运行
+- 振幅 3%-12%，ADX < 25，无异动放量 → 候选
+- 得分 ≥ 70 → ⭐推荐，≥ 80 → 🔥强烈推荐
 
-## 选币系统 5维评分
+## CI 自动扫描
 
-| 维度 | 权重 | 核心指标 |
-|------|:---:|---------|
-| 振幅 | 25% | 日均振幅 3%-12%，振幅稳定 CV<0.5 |
-| 震荡纯度 | 30% | ADX<20, BB位置30-70%, Stochastic频繁穿越20/80 |
-| 波动率 | 20% | ATR/价格 2%-5% |
-| 成交量 | 15% | 量萎缩<0.9，无异动，日成交>50万U |
-| 趋势排除 | 10% | 未突破20日区间，EMA7>EMA25 |
+每天北京时间 8:00 和 20:00 自动跑 `coin_scanner.js`，结果在 [Actions](https://github.com/davidlu020106-tech/madingniubi/actions) 页面查看。
 
-## 设计来源
+## 设计文档
 
-基于对 FMZ 5807个策略中 120个选币/震荡相关策略的深度分析
+- `docs/coin_screener_design.md` — 5维评分系统完整设计
+- `docs/coin_screening_analysis.md` — 120个FMZ策略分析
+- `docs/fmz_references.md` — FMZ参考策略索引

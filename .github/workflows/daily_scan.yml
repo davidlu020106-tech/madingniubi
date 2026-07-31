@@ -1,0 +1,30 @@
+name: 🔍 震荡币每日扫描
+
+on:
+  schedule:
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🟢 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 🔍 扫描震荡币
+        run: node coin_scanner.js | tee result.md
+
+      - name: 📊 保存结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-result
+          path: result.md
+          retention-days: 7
