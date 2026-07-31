@@ -11,12 +11,19 @@ const SCAN_DAYS = 30, MIN_VOLUME = 500000, AMPL_MIN = 3, AMPL_MAX = 12;
 const MAX_COIN_PRICE = 500, MARTIN_LEVERAGE = 5, MARTIN_LEVELS = 8;
 const BLACKLIST = new Set(['BTC','ETH','BCH','LTC','LINK','UNI','DOT','XRP','ADA','AVAX','ATOM','FIL','ETC']);
 
+const https = require('https');
+
 // ─── OKX HTTP 请求 ───
 function okxGet(path) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 8000);
-  return fetch('https://www.okx.com'+path, { signal: ctrl.signal, headers: {'User-Agent':'nbmb/1.0'} })
-    .then(r => r.json()).catch(() => null).finally(() => clearTimeout(t));
+  return new Promise(resolve => {
+    let done = false;
+    let timer = setTimeout(() => { if(!done){done=true;resolve(null);} }, 5000);
+    let req = https.get('https://www.okx.com'+path, {headers:{'User-Agent':'nbmb/1.0'}}, res => {
+      let d=''; res.on('data',c=>d+=c); res.on('end',()=>{if(!done){done=true;clearTimeout(timer);try{resolve(JSON.parse(d))}catch{resolve(null)}}});
+    });
+    req.on('error',()=>{if(!done){done=true;clearTimeout(timer);resolve(null);}});
+    req.end();
+  });
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -173,11 +180,10 @@ async function main() {
     let records = candles.data.reverse().map(c => ({ open:+c[1], high:+c[2], low:+c[3], close:+c[4], vol:+c[5] }));
     let last = +swaps[i].last || records[records.length-1].close;
     let r = score(records, {instId, last});
-    if (r) { r.vol24h = swaps[i].vol24h || '?'; results.push(r); }
-    if ((i+1) % 10 === 0) process.stdout.write(`\r  📊 ${i+1}/${swaps.length} (${results.length}候选)`);
-    await sleep(150);
+    if (r) { results.push(r); }
+    if ((i+1) % 10 === 0) console.log(`  📊 ${i+1}/${swaps.length} (${results.length}候选)`);
+    await sleep(100);
   }
-  process.stdout.write('\n');
 
   results.sort((a,b)=>b.score-a.score);
   if (results.length===0) { console.log('❌ 无候选'); process.exit(0); }
