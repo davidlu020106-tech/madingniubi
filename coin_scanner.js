@@ -177,59 +177,46 @@ async function main() {
   }
 
   results.sort((a,b)=>b.score-a.score);
+  if (results.length===0) { console.log('❌ 无候选'); process.exit(0); }
 
-  // ─── 计算 OKX 马丁参数建议 ───
-  for (let r of results) {
-    let ampl = +r.amp;
-    r.okx = {
-      direction: r.bullish ? '🟢 做多' : '🔴 做空',
-      addPct: (ampl * 0.15).toFixed(2) + '%',        // 跌多少加仓 = 振幅×0.15
-      tpPct: (ampl * 0.3).toFixed(2) + '%',           // 止盈 = 振幅×0.3
-      margin: (r.baseAmount||10) * (1-Math.pow(r.multiplier||1.5,MARTIN_LEVELS))/(1-(r.multiplier||1.5)) * (1/MARTIN_LEVERAGE).toFixed(0) + 'U',
-      baseMargin: (r.baseAmount||10)/MARTIN_LEVERAGE
-    };
-    // 保证金估算 (首单 + 8层马丁)
-    let mult = 1.5, total = 0, amt = 10;
-    for (let l=0; l<MARTIN_LEVELS; l++) { total += amt; amt *= mult; }
-    r.okx.totalMargin = (total / MARTIN_LEVERAGE).toFixed(0);
-    // 预估强平价 (8层后均价-30%)
-    let estPrice = +swaps[0] ? +swaps.find(s=>s.instId.includes(r.symbol))?.last || 50 : 50;
-    r.okx.liqPrice = (estPrice * 0.3).toFixed(2);
-  }
+  let r = results[0];
+  let ampl = +r.amp, price = +swaps.find(s=>s.instId.includes(r.symbol))?.last || 50;
+  let addPct = (ampl * 0.15).toFixed(2);
+  let tpPct = (ampl * 0.3).toFixed(2);
+  let mult = 1.5, totalAmt = 0, amt = 10;
+  for (let l=0; l<8; l++) { totalAmt += amt; amt *= mult; }
+  let marginTotal = (totalAmt / 5).toFixed(0);
+  let liqEst = (price * (1 - ampl * 1.5 / 100)).toFixed(4);
 
-  // ─── 输出：OKX马丁面板风格 ───
-  console.log(`\n## 🔥 OKX马丁最佳选币 — 今日推荐\n`);
-  console.log('| # | 币种 | 方向 | 跌%加仓 | 止盈% | 8层保证金 | 预估强平 | 评分 | 振幅 | ADX |');
-  console.log('|:--:|------|:----:|:------:|:-----:|:--------:|:--------:|:---:|:---:|:---:|');
-  for (let i=0;i<Math.min(20,results.length);i++) {
-    let r=results[i], o=r.okx;
-    let star = r.score>=70 ? '🔥' : r.score>=55 ? '⭐' : '';
-    console.log(`| ${i+1} | ${star}${r.symbol} | ${o.direction} | ${o.addPct} | ${o.tpPct} | ~${o.totalMargin}U | ~${o.liqPrice} | ${r.score} | ${r.amp}% | ${r.adx} |`);
-  }
-  console.log(`\n> ${results.length}个候选 | 排除:BTC/ETH等13个大市值+价格>$500 | 振幅${AMPL_MIN}-${AMPL_MAX}% ADX<25\n`);
+  console.log(`\n## 🔥 OKX马丁 — 今日最佳币种\n`);
+  console.log(`| 参数 | 建议值 | 说明 |`);
+  console.log(`|------|--------|------|`);
+  console.log(`| **币种** | **${r.symbol}** | 评分 ${r.score}/100 |`);
+  console.log(`| **方向** | ${r.bullish?'🟢 做多':'🔴 做空'} | EMA${r.bullish?'7>25多头':'7<25空头'}排列 |`);
+  console.log(`| **跌多少加仓** | ${addPct}% | 振幅${r.amp}% × 0.15 |`);
+  console.log(`| **单周期止盈** | ${tpPct}% | 振幅${r.amp}% × 0.3 |`);
+  console.log(`| **加仓倍数** | ${mult.toFixed(1)}× | 马丁倍率 |`);
+  console.log(`| **最大加仓次数** | 8 次 | 可扛回撤~${(ampl*1.5*0.8).toFixed(1)}% |`);
+  console.log(`| **初次下单金额** | 10 USDT | 首单保证金 ~2U(5x) |`);
+  console.log(`| **投入保证金(8层)** | ~${marginTotal} USDT | ∑首单×${mult.toFixed(1)}^层 / 5x杠杆 |`);
+  console.log(`| **预估强平价** | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
+  console.log(`| **止损建议** | 均价-${(ampl*2).toFixed(1)}% | 振幅×2 硬止损 |`);
+  console.log(`| **利润复投** | 建议开启 | 翻倍后提取本金 |`);
+  console.log(`| **ADX** | ${r.adx} | <25=震荡 ✅ |`);
+  console.log(`\n> 扫描${results.length}个候选 | 排除BTC/ETH等大市值 | 单价<$500\n`);
 
-  // Top 3 — 双向推荐
-  let bullish = results.filter(r=>r.bullish), bearish = results.filter(r=>!r.bullish);
-  console.log('### 🎯 推荐 Top 3\n');
-  if (bullish.length>0) console.log('**做多**:');
-  for (let i=0;i<Math.min(2,bullish.length);i++) {
-    let r=bullish[i], o=r.okx;
-    console.log(`- 🔥 **${r.symbol}** ${r.score}分 — 振幅${r.amp}% ADX${r.adx} | 跌${o.addPct}加仓 止盈${o.tpPct} | 保证金~${o.totalMargin}U`);
-  }
-  if (bearish.length>0) console.log('\\n**做空**:');
-  for (let i=0;i<Math.min(1,bearish.length);i++) {
-    let r=bearish[i], o=r.okx;
-    console.log(`- 🔥 **${r.symbol}** ${r.score}分 — 振幅${r.amp}% ADX${r.adx} | 涨${o.addPct}加仓 止盈${o.tpPct} | 保证金~${o.totalMargin}U`);
-  }
-
-  // GitHub Step Summary
+  // GitHub Summary
   if (process.env.GITHUB_STEP_SUMMARY) {
-    let fs = require('fs'), s = '';
-    s += `## 🔥 OKX马丁最佳选币\\n\\n`;
-    s += '| # | 币种 | 方向 | 跌%加仓 | 止盈% | 保证金 | 评分 |\\n|:--:|------|:----:|:------:|:-----:|:------:|:---:|\\n';
-    for (let i=0;i<Math.min(15,results.length);i++) { let r=results[i],o=r.okx; s += `| ${i+1} | **${r.symbol}** | ${o.direction} | ${o.addPct} | ${o.tpPct} | ~${o.totalMargin}U | ${r.score} |\\n`; }
-    let bl=bullish[0],br=bearish[0];
-    s += `\\n> 🟢做多: ${bl?bl.symbol+'('+bl.score+'分)':'-'} | 🔴做空: ${br?br.symbol+'('+br.score+'分)':'-'}\\n`;
+    let fs=require('fs'), s='';
+    s += `## 🔥 OKX马丁 — 今日最佳: **${r.symbol}** (${r.score}分)\\n\\n`;
+    s += `| 参数 | 建议值 |\\n|------|--------|\\n`;
+    s += `| 方向 | ${r.bullish?'🟢做多':'🔴做空'} |\\n`;
+    s += `| 跌加仓 | ${addPct}% |\\n`;
+    s += `| 止盈 | ${tpPct}% |\\n`;
+    s += `| 加仓倍数 | ${mult.toFixed(1)}× |\\n`;
+    s += `| 最大次数 | 8次 |\\n`;
+    s += `| 保证金 | ~${marginTotal}U |\\n`;
+    s += `| 强平 | ~${liqEst} |\\n`;
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, s);
   }
 }
