@@ -23,6 +23,8 @@ var RESCAN_HOURS = 24;       // 重新扫描间隔(小时)
 
 // 选币参数
 var AMPL_MIN = 3, AMPL_MAX = 12, MIN_VOL = 500000;
+var MAX_COIN_PRICE = 500;   // 排除单价>$500的币（BTC/ETH/BCH等太贵，10U买不到1张）
+var BLACKLIST = ["BTC","ETH","BCH","LTC","LINK","UNI","DOT","XRP","ADA","AVAX","ATOM","FIL","ETC"];
 
 // ═══════════ 持久化 ═══════════
 function load() { return _G("nbmb3") || { level:1, round:0, peak:0, locked:false, extracted:0, coin:"", lastScan:0 }; }
@@ -79,6 +81,9 @@ function scanMarket() {
   let results=[];
   for(let i=0;i<top100.length;i++){
     let id=top100[i].instId, sym=id.replace("-USDT-SWAP","");
+    if(BLACKLIST.indexOf(sym)>=0)continue;
+    // 用行情API自带的价格过滤大市值币
+    if(+top100[i].last > MAX_COIN_PRICE)continue;
     exchange.SetCurrency(sym+"_USDT");
     let recs=_C(exchange.GetRecords,PERIOD_D1);
     if(!recs||recs.length<30)continue;
