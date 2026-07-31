@@ -88,12 +88,12 @@ function scanMarket() {
     let recs=_C(exchange.GetRecords,PERIOD_D1);
     if(!recs||recs.length<30)continue;
     let r=scoreCoin(recs);
-    if(r && r.bull){ r.symbol=sym; results.push(r); }
+    if(r){ r.symbol=sym; results.push(r); }
     if((i+1)%20===0)Log("  ..."+ (i+1)+"/"+top100.length);
   }
   results.sort((a,b)=>b.score-a.score);
-  Log("✅ 扫描完成: "+results.length+"个候选(🟢多头), Top5:");
-  if(results.length===0){Log("⚠️ 无多头排列的震荡币，1小时后重试");return[];} 
+  Log("✅ 扫描完成: "+results.length+"个候选, Top5:");
+  if(results.length===0){Log("⚠️ 无候选，1小时后重试");return[];} 
   for(let i=0;i<Math.min(5,results.length);i++){
     let r=results[i],dir=r.bull?"🟢":"🔴";
     Log("  "+(i+1)+". "+dir+" "+r.symbol+" ("+r.score+"分) 振幅"+r.amp+"% ADX"+r.adx);
@@ -103,23 +103,28 @@ function scanMarket() {
 
 // ═══════════ 入场信号 ═══════════
 function entrySignal(records) {
-  let len=records.length;if(len<30)return false;
+  let len=records.length;if(len<30)return{d:null,desc:''};
   let macd=MACD(records),kdj=KDJ(records,9),e7=EMA(records,7),e25=EMA(records,25),last=len-1;
-  return cross(macd.dif,macd.dea,last) && cross(kdj.k,kdj.d,last) && e7[last]>=e25[last];
+  let long=cross(macd.dif,macd.dea,last) && cross(kdj.k,kdj.d,last) && e7[last]>=e25[last];
+  let short=cross(macd.dea,macd.dif,last) && cross(kdj.d,kdj.k,last) && e7[last]<=e25[last];
+  if(long)return{d:'long',desc:'MACD+KDJ双金叉做多'};
+  if(short)return{d:'short',desc:'MACD+KDJ双死叉做空'};
+  return{d:null,desc:''};
 }
 
 // ═══════════ 终止信号 ═══════════
-function stopSignal(records, st, eq) {
+function stopSignal(records, st, eq, dir) {
   if(st.peak>0&& (st.peak-eq)/st.peak >= MAX_DD) return {stop:true,lock:true,reason:"回撤"+(100*(st.peak-eq)/st.peak).toFixed(0)+"%"};
   let e7=EMA(records,7),e25=EMA(records,25),last=records.length-1;
-  if(e7[last]<e25[last]) return {stop:true,lock:false,reason:"EMA空头反转"};
+  if(dir==='long' && e7[last]<e25[last]) return {stop:true,lock:false,reason:"多头→空头反转"};
+  if(dir==='short' && e7[last]>e25[last]) return {stop:true,lock:false,reason:"空头→多头反转"};
   return {stop:false,lock:false,reason:""};
 }
 
 // ═══════════ 交易操作 ═══════════
 function getEq(){let a=_C(exchange.GetAccount);return a?a.Balance:-1;}
 function cancelAll(){while(true){let os=_C(exchange.GetOrders);if(!os||os.length===0)break;for(let o of os){exchange.CancelOrder(o.Id,o);Sleep(200);}Sleep(200);}}
-function trade(dir,price,amt){exchange.SetDirection(dir);if(dir==="buy")return exchange.Buy(price,amt);if(dir==="closebuy")return exchange.Sell(price,amt);}
+function trade(dir,price,amt){exchange.SetDirection(dir);if(dir==="buy")return exchange.Buy(price,amt);if(dir==="closebuy")return exchange.Sell(price,amt);if(dir==="sell")return exchange.Sell(price,amt);if(dir==="closesell")return exchange.Buy(price,amt);}
 
 // ═══════════ 主循环 ═══════════
 function main() {
@@ -163,55 +168,59 @@ function main() {
     var ticker=_C(exchange.GetTicker), price=ticker.Last, pos=_C(exchange.GetPosition), recs=_C(exchange.GetRecords,PERIOD_M5), eq2=getEq();
     if(eq2>st.peak)st.peak=eq2;
 
+    var dir=st.dir || 'long';
     // 终止信号
-    var stop=stopSignal(recs,st,eq2);
+    var stop=stopSignal(recs,st,eq2,dir);
     if(stop.stop){
       Log("🛑 "+stop.reason);cancelAll();
-      if(pos.length>0)trade("closebuy",price,pos[0].Amount);
+      if(pos.length>0){
+        var closeDir=pos[0].Type===0?"closebuy":"closesell";
+        trade(closeDir,price,pos[0].Amount);
+      }
       if(stop.lock){st.locked=true;save(st);Log("🔒 锁死!");while(true)Sleep(60000);}
-      st.level=1;st.coin="";save(st);
+      st.level=1;st.coin="";st.dir=null;save(st);
       break;
     }
 
     // 无持仓→等信号
     if(pos.length===0){
-      if(entrySignal(recs)){
-        Log("🎯 MACD+KDJ双金叉,入场!");
-        trade("buy",price-price*DIST_PCT/100,BASE_AMOUNT);
-        st.level=1;save(st);
+      var sig=entrySignal(recs);
+      if(sig.d){
+        Log("🎯 "+sig.desc);
+        var entryPrice=sig.d==='long'?price-price*DIST_PCT/100:price+price*DIST_PCT/100;
+        trade(sig.d==='long'?"buy":"sell",entryPrice,BASE_AMOUNT);
+        st.level=1;st.dir=sig.d;save(st);
       }
     }
 
     // 多仓→马丁管理
     if(pos.length>0&&pos[0].Type===0){
       let p=pos[0];
-      if(p.Profit>=TARGET_USDT){
-        Log("💰 止盈+"+p.Profit.toFixed(2)+"USDT");
-        trade("closebuy",price,p.Amount);
-        st.round++;st.level=1;
-        LogProfit(eq2-getEq());
-        save(st);
-        // 检查翻倍
-        if(eq2>=st.peak*2){
-          Log("🎉 翻倍! 建议提取利润");
-        }
-        continue;
-      }
-      // 加仓:跌1%+反弹0.3%
+      if(p.Profit>=TARGET_USDT){Log("💰 做多止盈+"+p.Profit.toFixed(2)+"USDT");trade("closebuy",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
       let addAt=p.Price*(1-DIST_PCT/100),lowest=_G("nbmb_low")||price;
       if(price<lowest)_G("nbmb_low",price);
       if(price>lowest*(1+REBOUND_PCT/100)&&price<=addAt&&st.level<MAX_LEVEL){
         let amt=BASE_AMOUNT*Math.pow(MULTIPLIER,st.level);
-        Log("📉 加仓L"+ (st.level+1)+": "+amt.toFixed(1)+"USDT");
-        cancelAll();trade("buy",price,amt);
-        st.level++;_G("nbmb_low",price);save(st);
-        continue;
+        Log("📉 多仓加L"+(st.level+1)+": "+amt.toFixed(1)+"USDT");
+        cancelAll();trade("buy",price,amt);st.level++;_G("nbmb_low",price);save(st);continue;
       }
-      // 挂止盈
       var orders=_C(exchange.GetOrders);
-      if(!orders.some(o=>o.Type===1)){
-        trade("closebuy",Math.max(p.Price+TARGET_USDT,price+TARGET_USDT),p.Amount);
+      if(!orders.some(o=>o.Type===1))trade("closebuy",Math.max(p.Price+TARGET_USDT,price+TARGET_USDT),p.Amount);
+    }
+
+    // 空仓→马丁管理
+    if(pos.length>0&&pos[0].Type===1){
+      let p=pos[0];
+      if(p.Profit>=TARGET_USDT){Log("💰 做空止盈+"+p.Profit.toFixed(2)+"USDT");trade("closesell",price,p.Amount);st.round++;st.level=1;st.dir=null;save(st);continue;}
+      let addAt=p.Price*(1+DIST_PCT/100),highest=_G("nbmb_high")||price;
+      if(price>highest)_G("nbmb_high",price);
+      if(price<highest*(1-REBOUND_PCT/100)&&price>=addAt&&st.level<MAX_LEVEL){
+        let amt=BASE_AMOUNT*Math.pow(MULTIPLIER,st.level);
+        Log("📈 空仓加L"+(st.level+1)+": "+amt.toFixed(1)+"USDT");
+        cancelAll();trade("sell",price,amt);st.level++;_G("nbmb_high",price);save(st);continue;
       }
+      var orders=_C(exchange.GetOrders);
+      if(!orders.some(o=>o.Type===2))trade("closesell",Math.min(p.Price-TARGET_USDT,price-TARGET_USDT),p.Amount);
     }
 
     save(st);
