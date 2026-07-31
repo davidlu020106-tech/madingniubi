@@ -174,7 +174,7 @@ async function main() {
     let hi24 = +swaps[i].high24h, lo24 = +swaps[i].low24h, op24 = +swaps[i].open24h;
     if (hi24 && lo24 && op24) {
       let ampl24 = (hi24-lo24)/op24*100;
-      if (ampl24 < 1.5 || ampl24 > 15) continue;
+      if (ampl24 < 1.0 || ampl24 > 18) continue;  // 放宽: 1-18%都看
     }
     let candles = await okxGet(`/api/v5/market/candles?instId=${instId}&bar=1D&limit=35`);
     if (!candles || !candles.data || candles.data.length < 30) continue;
@@ -189,53 +189,44 @@ async function main() {
   results.sort((a,b)=>b.score-a.score);
   if (results.length===0) { console.log('❌ 无候选'); process.exit(0); }
 
-  let r = results[0];
-  let ampl = +r.amp, price = +swaps.find(s=>s.instId.includes(r.symbol))?.last || 50;
-  let addPct = (ampl * 0.15).toFixed(2);
-  let tpPct = (ampl * 0.3).toFixed(2);
-  let mult = 1.5, totalAmt = 0, amt = 10;
-  for (let l=0; l<8; l++) { totalAmt += amt; amt *= mult; }
-  // 杠杆建议
-  let lev, levNote;
-  if (+r.adx<10 && ampl>=5)      { lev=20; levNote='极震+高振幅，激进20x翻倍'; }
-  else if (+r.adx<12 && ampl>=4) { lev=15; levNote='低ADX+足振幅，15x快速翻倍'; }
-  else if (+r.adx<15 && ampl>=3) { lev=10; levNote='标准震荡，10x稳翻倍'; }
-  else if (+r.adx<20)            { lev=8;  levNote='ADX偏高，8x谨慎'; }
-  else                           { lev=5;  levNote='震荡不纯，5x保守'; }
-  let marginTotal = (totalAmt / lev).toFixed(0);
-  let liqEst = (price * (1 - ampl * 1.5 / 100)).toFixed(4);
+  function printCoin(r, rank) {
+    let ampl=+r.amp, price=+swaps.find(s=>s.instId.includes(r.symbol))?.last||50;
+    let addPct=(ampl*0.15).toFixed(2), tpPct=(ampl*0.3).toFixed(2);
+    let mult=1.5, totalAmt=0, amt=10;
+    for(let l=0;l<8;l++){totalAmt+=amt;amt*=mult;}
+    let lev,levNote;
+    if(+r.adx<10&&ampl>=5){lev=20;levNote='20x激进翻倍';}
+    else if(+r.adx<12&&ampl>=4){lev=15;levNote='15x快速翻倍';}
+    else if(+r.adx<15&&ampl>=3){lev=10;levNote='10x标准';}
+    else if(+r.adx<20){lev=8;levNote='8x谨慎';}
+    else{lev=5;levNote='5x保守';}
+    let marginTotal=(totalAmt/lev).toFixed(0);
+    let liqEst=(price*(1-ampl*1.5/100)).toFixed(4);
+    let emoji = r.score>=70?'🔥':r.score>=55?'⭐':'';
+    console.log(`\n### ${rank}. ${emoji} ${r.symbol} — ${r.score}分 ${r.bullish?'🟢做多':'🔴做空'}`);
+    console.log(`| 参数 | 建议值 |`);
+    console.log(`|------|--------|`);
+    console.log(`| 方向 | ${r.bullish?'🟢做多':'🔴做空'} |`);
+    console.log(`| 跌加仓 | ${addPct}% | 止盈 | ${tpPct}% |`);
+    console.log(`| 杠杆 | ${lev}x(${levNote}) | 保证金~${marginTotal}U |`);
+    console.log(`| 振幅 | ${r.amp}% | ADX | ${r.adx} | 强平~${liqEst} |`);
+    return {symbol:r.symbol,score:r.score,dir:r.bullish?'做多':'做空',addPct,tpPct,lev,marginTotal};
+  }
 
-  console.log(`\n## 🔥 OKX马丁 — 今日最佳币种\n`);
-  console.log(`| 参数 | 建议值 | 说明 |`);
-  console.log(`|------|--------|------|`);
-  console.log(`| **币种** | **${r.symbol}** | 评分 ${r.score}/100 |`);
-  console.log(`| **方向** | ${r.bullish?'🟢 做多':'🔴 做空'} | EMA${r.bullish?'7>25多头':'7<25空头'}排列 |`);
-  console.log(`| **跌多少加仓** | ${addPct}% | 振幅${r.amp}% × 0.15 |`);
-  console.log(`| **单周期止盈** | ${tpPct}% | 振幅${r.amp}% × 0.3 |`);
-  console.log(`| **加仓倍数** | ${mult.toFixed(1)}× | 马丁倍率 |`);
-  console.log(`| **最大加仓次数** | 8 次 | 可扛回撤~${(ampl*1.5*0.8).toFixed(1)}% |`);
-  console.log(`| **初次下单金额** | 10 USDT | 首单保证金 ~${(10/lev).toFixed(1)}U(${lev}x) |`);
-  console.log(`| **杠杆倍数** | **${lev}x** | ${levNote} |`);
-  console.log(`| **投入保证金(8层)** | ~${marginTotal} USDT | ∑首单×1.5^层 / ${lev}x杠杆 |`);
-  console.log(`| **预估强平价** | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
-  console.log(`| **止损建议** | 均价-${(ampl*2).toFixed(1)}% | 振幅×2 硬止损 |`);
-  console.log(`| **利润复投** | 建议开启 | 翻倍后提取本金 |`);
-  console.log(`| **ADX** | ${r.adx} | <25=震荡 ✅ |`);
-  console.log(`\n> 扫描${results.length}个候选 | 排除BTC/ETH等大市值 | 单价<$500\n`);
+  let top = results.slice(0,3);
+  console.log(`\n## 🔥 OKX马丁 — 今日Top3 (${results.length}候选)\n`);
+  let summaries = [];
+  for (let i=0;i<top.length;i++) summaries.push(printCoin(top[i],i+1));
+  console.log(`\n> 排除BTC/ETH等大市值 | 振幅1-18% ADX<25 | 50币扫出${results.length}候选\n`);
 
   // GitHub Summary
   if (process.env.GITHUB_STEP_SUMMARY) {
     let fs=require('fs'), s='';
-    s += `## 🔥 OKX马丁 — 今日最佳: **${r.symbol}** (${r.score}分)\\n\\n`;
-    s += `| 参数 | 建议值 |\\n|------|--------|\\n`;
-    s += `| 方向 | ${r.bullish?'🟢做多':'🔴做空'} |\\n`;
-    s += `| 跌加仓 | ${addPct}% |\\n`;
-    s += `| 止盈 | ${tpPct}% |\\n`;
-    s += `| 加仓倍数 | ${mult.toFixed(1)}× |\\n`;
-    s += `| 最大次数 | 8次 |\\n`;
-    s += `| 保证金 | ~${marginTotal}U |\\n`;
-    s += `| 杠杆 | ${lev}x |\\n`;
-    s += `| 强平 | ~${liqEst} |\\n`;
+    s += `## 🔥 OKX马丁 Top3 (${results.length}候选)\\n\\n`;
+    for (let i=0;i<top.length;i++) {
+      let sum=summaries[i];
+      s += `**${i+1}. ${sum.symbol}** ${sum.score}分 ${sum.dir} | 跌${sum.addPct}%止盈${sum.tpPct}% | ${sum.lev}x ~${sum.marginTotal}U\\n\\n`;
+    }
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, s);
   }
 }
