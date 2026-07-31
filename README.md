@@ -1,24 +1,28 @@
 # 牛逼马丁不死不休 💪
 
-快速翻倍 + 接受爆仓 + 信号止损 — 马丁量化交易系统
+选币+马丁翻倍 合一量化交易系统 — FMZ 一键部署
 
 [![震荡币扫描](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml/badge.svg)](https://github.com/davidlu020106-tech/madingniubi/actions/workflows/daily_scan.yml)
 
-## 文件速查
+## 🚀 一键部署
 
-| 文件 | 用途 | 在哪跑 |
-|------|------|--------|
-| `coin_scanner.js` | ✅ 选币器（5维评分） | `node` / GitHub Actions |
-| `fmz_double_martin.js` | ✅ **翻倍马丁策略**（新） | FMZ 策略编辑器 |
-| `fmz_martin.js` | 马丁核心骨架 | FMZ |
-| `fmz_coin_scanner.js` | 选币器(FMZ版) | FMZ |
+打开 FMZ → 新建策略 → JavaScript → 粘贴 `fmz_combined.js` → 配置 OKX 合约 → 运行
 
-## 策略设计
+**逻辑**: 启动自动扫全市场选震荡币 → 在最优币上跑马丁翻倍 → 回撤/趋势反转自动换币
 
-**三层架构**: 入场信号(MACD+KDJ) → 马丁翻倍(multiplier=2.0,10层) → 信号终止(回撤40%+均线反转)
+## 文件
 
-详见 `docs/strategy_design.md`
+| 文件 | 说明 |
+|------|------|
+| **`fmz_combined.js`** | ★ **选币+马丁合一**（FMZ部署） |
+| `fmz_double_martin.js` | 马丁翻倍独立版 |
+| `fmz_martin.js` | 马丁核心骨架 |
+| `coin_scanner.js` | Node.js 选币器（CI） |
 
-## CI
+## 参数
 
-每天 8:00/20:00 自动扫描 → [Actions](https://github.com/davidlu020106-tech/madingniubi/actions)
+`5x杠杆 × 2.0倍加仓 × 10层` | 止盈20U | 回撤40%锁死 | 24h重扫描
+
+## 文档
+
+`docs/strategy_design.md` — 策略设计（99+策略分析来源）
