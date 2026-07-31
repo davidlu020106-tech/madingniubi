@@ -9,6 +9,8 @@
 
 const https = require('https');
 const SCAN_DAYS = 30, MIN_VOLUME = 500000, AMPL_MIN = 3, AMPL_MAX = 12;
+const MAX_COIN_PRICE = 500, MARTIN_LEVERAGE = 5, MARTIN_LEVELS = 8;
+const BLACKLIST = new Set(['BTC','ETH','BCH','LTC','LINK','UNI','DOT','XRP','ADA','AVAX','ATOM','FIL','ETC']);
 
 // ─── OKX HTTP 请求 ───
 function okxGet(path) {
@@ -162,6 +164,8 @@ async function main() {
   let results = [];
   for (let i = 0; i < swaps.length; i++) {
     let instId = swaps[i].instId, symbol = instId.replace('-USDT-SWAP','');
+    if (BLACKLIST.has(symbol)) continue;
+    if (+swaps[i].last > MAX_COIN_PRICE) continue;
     let candles = await okxGet(`/api/v5/market/candles?instId=${instId}&bar=1D&limit=35`);
     if (!candles || !candles.data || candles.data.length < 30) continue;
     let records = candles.data.reverse().map(c => ({ open:+c[1], high:+c[2], low:+c[3], close:+c[4], vol:+c[5] }));
@@ -174,40 +178,59 @@ async function main() {
 
   results.sort((a,b)=>b.score-a.score);
 
-  // ─── 输出表格 ───
-  console.log(`\n## 📊 震荡币筛选 — Top ${Math.min(30,results.length)}\n`);
-  console.log('| # | 币种 | 分 | 振幅% | ADX | BB | 量缩 | 穿越 | 方向 | 风险 |');
-  console.log('|:--:|-----|:--:|:---:|:---:|:--:|:---:|:---:|:--:|------|');
-  for (let i=0;i<Math.min(30,results.length);i++) {
-    let r=results[i], raw=r.raw;
-    let icon = r.bullish ? '🟢' : '🔴';
-    let star = r.score>=60 ? (r.score>=70 ? '🔥' : '⭐') : '';
-    let warns = r.warnings.length ? r.warnings.join(' ') : '—';
-    console.log(`| ${i+1} | ${star}${r.symbol} | ${r.score} | ${r.amp} | ${r.adx} | ${r.bb} | ${r.volS} | ${r.stochX} | ${icon} | ${warns} |`);
+  // ─── 计算 OKX 马丁参数建议 ───
+  for (let r of results) {
+    let ampl = +r.amp;
+    r.okx = {
+      direction: r.bullish ? '🟢 做多' : '🔴 做空',
+      addPct: (ampl * 0.15).toFixed(2) + '%',        // 跌多少加仓 = 振幅×0.15
+      tpPct: (ampl * 0.3).toFixed(2) + '%',           // 止盈 = 振幅×0.3
+      margin: (r.baseAmount||10) * (1-Math.pow(r.multiplier||1.5,MARTIN_LEVELS))/(1-(r.multiplier||1.5)) * (1/MARTIN_LEVERAGE).toFixed(0) + 'U',
+      baseMargin: (r.baseAmount||10)/MARTIN_LEVERAGE
+    };
+    // 保证金估算 (首单 + 8层马丁)
+    let mult = 1.5, total = 0, amt = 10;
+    for (let l=0; l<MARTIN_LEVELS; l++) { total += amt; amt *= mult; }
+    r.okx.totalMargin = (total / MARTIN_LEVERAGE).toFixed(0);
+    // 预估强平价 (8层后均价-30%)
+    let estPrice = +swaps[0] ? +swaps.find(s=>s.instId.includes(r.symbol))?.last || 50 : 50;
+    r.okx.liqPrice = (estPrice * 0.3).toFixed(2);
   }
 
-  console.log(`\n> ${results.length} 个候选 | 🟢=多头排列 🔴=空头 | 振幅${AMPL_MIN}-${AMPL_MAX}% ADX<25\n`);
+  // ─── 输出：OKX马丁面板风格 ───
+  console.log(`\n## 🔥 OKX马丁最佳选币 — 今日推荐\n`);
+  console.log('| # | 币种 | 方向 | 跌%加仓 | 止盈% | 8层保证金 | 预估强平 | 评分 | 振幅 | ADX |');
+  console.log('|:--:|------|:----:|:------:|:-----:|:--------:|:--------:|:---:|:---:|:---:|');
+  for (let i=0;i<Math.min(20,results.length);i++) {
+    let r=results[i], o=r.okx;
+    let star = r.score>=70 ? '🔥' : r.score>=55 ? '⭐' : '';
+    console.log(`| ${i+1} | ${star}${r.symbol} | ${o.direction} | ${o.addPct} | ${o.tpPct} | ~${o.totalMargin}U | ~${o.liqPrice} | ${r.score} | ${r.amp}% | ${r.adx} |`);
+  }
+  console.log(`\n> ${results.length}个候选 | 排除:BTC/ETH等13个大市值+价格>$500 | 振幅${AMPL_MIN}-${AMPL_MAX}% ADX<25\n`);
 
-  // Top 3 只推荐多头排列的
-  let longs = results.filter(r=>r.bullish);
-  let picks = longs.length>=3 ? longs : results;
-  if (picks.length >= 3) {
-    console.log('### 🎯 推荐 Top 3（多头排列）');
-    for (let i=0;i<Math.min(3,picks.length);i++) {
-      let r=picks[i], raw=r.raw;
-      console.log(`- **${r.symbol}** — ${r.score}分 (振幅${raw.amp}+震荡${raw.osc}+波动${raw.vol}+量${raw.vol2}+方向${raw.dir})`);
-    }
+  // Top 3 — 双向推荐
+  let bullish = results.filter(r=>r.bullish), bearish = results.filter(r=>!r.bullish);
+  console.log('### 🎯 推荐 Top 3\n');
+  if (bullish.length>0) console.log('**做多**:');
+  for (let i=0;i<Math.min(2,bullish.length);i++) {
+    let r=bullish[i], o=r.okx;
+    console.log(`- 🔥 **${r.symbol}** ${r.score}分 — 振幅${r.amp}% ADX${r.adx} | 跌${o.addPct}加仓 止盈${o.tpPct} | 保证金~${o.totalMargin}U`);
+  }
+  if (bearish.length>0) console.log('\\n**做空**:');
+  for (let i=0;i<Math.min(1,bearish.length);i++) {
+    let r=bearish[i], o=r.okx;
+    console.log(`- 🔥 **${r.symbol}** ${r.score}分 — 振幅${r.amp}% ADX${r.adx} | 涨${o.addPct}加仓 止盈${o.tpPct} | 保证金~${o.totalMargin}U`);
   }
 
   // GitHub Step Summary
   if (process.env.GITHUB_STEP_SUMMARY) {
-    let fs = require('fs'), summary = '';
-    summary += `## 📊 震荡币筛选 — Top ${Math.min(20,results.length)}\n\n`;
-    summary += '| 排名 | 币种 | 总分 | 振幅% | ADX | BB位 | 量缩 | 穿越 |\n|:---:|------|:---:|:---:|:---:|:---:|:---:|:---:|\n';
-    for (let i=0;i<Math.min(20,results.length);i++) { let r=results[i]; summary += `| ${i+1} | **${r.symbol}** | ${r.score} | ${r.amp} | ${r.adx} | ${r.bb} | ${r.volS} | ${r.stochX} |\n`; }
-    summary += `\n> ${results.length} 个候选 | `;
-    if (results.length>=3) { let r=results[0]; summary += `**🏆 ${r.symbol}**(${r.score}分) | ${results[1]?.symbol||''}(${results[1]?.score||''}分) | ${results[2]?.symbol||''}(${results[2]?.score||''}分)`; }
-    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+    let fs = require('fs'), s = '';
+    s += `## 🔥 OKX马丁最佳选币\\n\\n`;
+    s += '| # | 币种 | 方向 | 跌%加仓 | 止盈% | 保证金 | 评分 |\\n|:--:|------|:----:|:------:|:-----:|:------:|:---:|\\n';
+    for (let i=0;i<Math.min(15,results.length);i++) { let r=results[i],o=r.okx; s += `| ${i+1} | **${r.symbol}** | ${o.direction} | ${o.addPct} | ${o.tpPct} | ~${o.totalMargin}U | ${r.score} |\\n`; }
+    let bl=bullish[0],br=bearish[0];
+    s += `\\n> 🟢做多: ${bl?bl.symbol+'('+bl.score+'分)':'-'} | 🔴做空: ${br?br.symbol+'('+br.score+'分)':'-'}\\n`;
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, s);
   }
 }
 
