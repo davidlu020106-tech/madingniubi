@@ -7,22 +7,16 @@
  * CI:   GitHub Actions 每天自动跑，输出漂亮的 markdown 报告
  * ============================================================ */
 
-const https = require('https');
 const SCAN_DAYS = 30, MIN_VOLUME = 500000, AMPL_MIN = 3, AMPL_MAX = 12;
 const MAX_COIN_PRICE = 500, MARTIN_LEVERAGE = 5, MARTIN_LEVELS = 8;
 const BLACKLIST = new Set(['BTC','ETH','BCH','LTC','LINK','UNI','DOT','XRP','ADA','AVAX','ATOM','FIL','ETC']);
 
 // ─── OKX HTTP 请求 ───
 function okxGet(path) {
-  return new Promise((resolve, reject) => {
-    let timer = setTimeout(() => { req.destroy(); resolve(null); }, 8000);
-    let req = https.get({ hostname:'www.okx.com', path, headers:{'User-Agent':'nbmb/1.0'}, timeout:8000 }, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => { clearTimeout(timer); try { resolve(JSON.parse(data)); } catch { resolve(null); } });
-    });
-    req.on('error', e => { clearTimeout(timer); resolve(null); });
-  });
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  return fetch('https://www.okx.com'+path, { signal: ctrl.signal, headers: {'User-Agent':'nbmb/1.0'} })
+    .then(r => r.json()).catch(() => null).finally(() => clearTimeout(t));
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
