@@ -161,9 +161,8 @@ async function main() {
   if (!tickers || !tickers.data) { console.error('❌ 获取行情失败'); process.exit(1); }
 
   let swaps = tickers.data.filter(t => t.instId.endsWith('-USDT-SWAP'))
-    .sort((a,b) => (+b.vol24h) - (+a.vol24h))
-    .slice(0, 50);
-  console.log(`📡 交易量前50名，预筛选后扫描...\n`);
+    .sort((a,b) => (+b.vol24h) - (+a.vol24h));
+  console.log(`📡 共 ${swaps.length} 个USDT永续合约，全量扫描...\n`);
 
   let results = [];
   for (let i = 0; i < swaps.length; i++) {
@@ -182,7 +181,7 @@ async function main() {
     let last = +swaps[i].last || records[records.length-1].close;
     let r = score(records, {instId, last});
     if (r) { results.push(r); }
-    if ((i+1) % 10 === 0) console.log(`  📊 ${i+1}/${swaps.length} (${results.length}候选)`);
+    if ((i+1) % 30 === 0) console.log(`  📊 ${i+1}/${swaps.length} (${results.length}候选)`);
     await sleep(100);
   }
 
@@ -204,12 +203,16 @@ async function main() {
     let liqEst=(price*(1-ampl*1.5/100)).toFixed(4);
     let emoji = r.score>=70?'🔥':r.score>=55?'⭐':'';
     console.log(`\n### ${rank}. ${emoji} ${r.symbol} — ${r.score}分 ${r.bullish?'🟢做多':'🔴做空'}`);
-    console.log(`| 参数 | 建议值 |`);
-    console.log(`|------|--------|`);
-    console.log(`| 方向 | ${r.bullish?'🟢做多':'🔴做空'} |`);
-    console.log(`| 跌加仓 | ${addPct}% | 止盈 | ${tpPct}% |`);
-    console.log(`| 杠杆 | ${lev}x(${levNote}) | 保证金~${marginTotal}U |`);
-    console.log(`| 振幅 | ${r.amp}% | ADX | ${r.adx} | 强平~${liqEst} |`);
+    console.log(`| 参数 | 建议值 | 说明 |`);
+    console.log(`|------|--------|------|`);
+    console.log(`| 方向 | ${r.bullish?'🟢做多':'🔴做空'} | EMA排列 |`);
+    console.log(`| 跌加仓 | ${addPct}% | 振幅${r.amp}% × 0.15 |`);
+    console.log(`| 止盈 | ${tpPct}% | 振幅${r.amp}% × 0.3 |`);
+    console.log(`| 杠杆 | **${lev}x** | ${levNote} |`);
+    console.log(`| 首单保证金 | ~${(10/lev).toFixed(1)}U | 10U名义/${lev}x |`);
+    console.log(`| 8层总保证金 | ~${marginTotal}U | ∑首单×1.5^层/${lev}x |`);
+    console.log(`| 预估强平 | ~${liqEst} | 当前价×${(1-ampl*1.5/100).toFixed(2)} |`);
+    console.log(`| ADX | ${r.adx} | <25震荡✅ | 振幅${r.amp}% |`);
     return {symbol:r.symbol,score:r.score,dir:r.bullish?'做多':'做空',addPct,tpPct,lev,marginTotal};
   }
 
