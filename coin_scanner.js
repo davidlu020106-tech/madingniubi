@@ -17,8 +17,8 @@ const https = require('https');
 function okxGet(path) {
   return new Promise(resolve => {
     let done = false;
-    let timer = setTimeout(() => { if(!done){done=true;resolve(null);} }, 5000);
-    let req = https.get('https://www.okx.com'+path, {headers:{'User-Agent':'nbmb/1.0'}}, res => {
+    let timer = setTimeout(() => { if(!done){done=true;resolve(null);} }, 10000);
+    let req = https.get('https://www.okx.com'+path, {headers:{'User-Agent':'Mozilla/5.0','Accept':'application/json'}}, res => {
       let d=''; res.on('data',c=>d+=c); res.on('end',()=>{if(!done){done=true;clearTimeout(timer);try{resolve(JSON.parse(d))}catch{resolve(null)}}});
     });
     req.on('error',()=>{if(!done){done=true;clearTimeout(timer);resolve(null);}});
