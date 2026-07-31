@@ -95,22 +95,52 @@ function score(records, ticker) {
   if (records.length<30) return null;
   let amp=amplitude(records.slice(-SCAN_DAYS)), adxR=adx(records), bb=bbPos(records), sx=stochCross(records), vol=volCheck(records), tr=trendCheck(records);
   if (amp.avgAmpl<AMPL_MIN||amp.avgAmpl>AMPL_MAX||adxR.adx>25||vol.volSpike>2||tr.breakout) return null;
-  let s1=0,s2=0,s3=0,s4=0,s5=0;
+
+  let last=records.length-1;
+  let ema7=ema(records,7), ema25=ema(records,25);
+  let bullish = ema7[last] >= ema25[last]; // EMA多头排列
+
+  // ── ① 振幅 (25) ──
+  let s1=0;
   if (amp.avgAmpl>=5&&amp.avgAmpl<=8)s1+=12; else if(amp.avgAmpl>=3&&amp.avgAmpl<=12)s1+=7;
   if(amp.amplCV<0.5)s1+=8; else if(amp.amplCV<0.8)s1+=4;
   if(amp.quality>1.5)s1+=5; else if(amp.quality>1)s1+=2;
-  if(adxR.adx<15)s2+=15; else if(adxR.adx<20)s2+=10; else s2+=5;
-  if(!adxR.rising)s2+=5;
+
+  // ── ② 震荡纯度 (30) ── 收紧：ADX更细分
+  let s2=0;
+  if(adxR.adx<12)s2+=18; else if(adxR.adx<15)s2+=12; else if(adxR.adx<20)s2+=7; else s2+=3;
+  if(!adxR.rising)s2+=5; else if(adxR.adx<15)s2+=2;
   if(bb>0.3&&bb<0.7)s2+=5; else if(bb>0.2&&bb<0.8)s2+=3;
-  if(sx>=3)s2+=5; else if(sx>=1)s2+=2;
+  if(sx>=4)s2+=5; else if(sx>=2)s2+=3; else if(sx>=1)s2+=1;
+
+  // ── ③ 波动率 (20) ── 收紧：ATR/价格<2%的大幅扣分
   let atrPct=amp.avgAmpl*1.2;
-  if(atrPct>=2&&atrPct<=5)s3+=20; else if(atrPct>=1.5&&atrPct<=8)s3+=10; else if(atrPct<8)s3+=3;
-  if(vol.shrinks<0.9)s4+=8; else if(vol.shrinks<1.1)s4+=4;
+  if(atrPct>=3&&atrPct<=5)s3+=20; else if(atrPct>=2.5&&atrPct<=6)s3+=14; else if(atrPct>=2&&atrPct<=7)s3+=8; else s3+=3;
+
+  // ── ④ 成交量 (15) ──
+  let s4=0;
+  if(vol.shrinks<0.85)s4+=8; else if(vol.shrinks<0.95)s4+=5; else if(vol.shrinks<1.1)s4+=2;
   if(vol.avgVol*ticker.last>MIN_VOLUME)s4+=7; else if(vol.avgVol*ticker.last>200000)s4+=3;
-  let ema7=ema(records,7), ema25=ema(records,25), last=records.length-1;
-  if(ema7[last]>=ema25[last]) s5+=5;
-  if(!adxR.rising)s5+=5; else s5+=2;
-  return {symbol:ticker.instId.replace('-USDT-SWAP',''), score:s1+s2+s3+s4+s5, amp:_f(amp.avgAmpl,1), adx:_f(adxR.adx,1), bb:_f(bb,2), volS:_f(vol.shrinks,2), stochX:sx, raw:{s1,s2,s3,s4,s5}};
+
+  // ── ⑤ 方向适合度 (10) ── 空头排列不给分
+  let s5=0;
+  if(bullish)s5+=6;
+  if(!adxR.rising)s5+=4; else if(adxR.adx<12)s5+=2;
+
+  // ── 风险标签 ──
+  let warnings = [];
+  if(!bullish) warnings.push('空头排列');
+  if(atrPct<2) warnings.push('波幅薄');
+  if(adxR.rising&&adxR.adx>15) warnings.push('ADX上升');
+  if(vol.volSpike>1.5) warnings.push('量异动');
+
+  return {
+    symbol:ticker.instId.replace('-USDT-SWAP',''),
+    score:s1+s2+s3+s4+s5,
+    amp:_f(amp.avgAmpl,1), adx:_f(adxR.adx,1), bb:_f(bb,2), volS:_f(vol.shrinks,2), stochX:sx,
+    bullish, warnings,
+    raw:{amp:s1,osc:s2,vol:s3,vol2:s4,dir:s5}
+  };
 }
 
 function ema(arr, p) { let a=2/(p+1), r=[arr[0].close]; for(let i=1;i<arr.length;i++)r.push(a*arr[i].close+(1-a)*r[i-1]); return r; }
@@ -143,21 +173,27 @@ async function main() {
   results.sort((a,b)=>b.score-a.score);
 
   // ─── 输出表格 ───
-  console.log(`\n## 📊 震荡币筛选结果 — Top ${Math.min(30,results.length)}\n`);
-  console.log('| 排名 | 币种 | 总分 | 振幅% | ADX | BB位 | 量缩 | 穿越 | 24h成交量 |');
-  console.log('|:---:|------|:---:|:---:|:---:|:---:|:---:|:---:|:---|');
+  console.log(`\n## 📊 震荡币筛选 — Top ${Math.min(30,results.length)}\n`);
+  console.log('| # | 币种 | 分 | 振幅% | ADX | BB | 量缩 | 穿越 | 方向 | 风险 |');
+  console.log('|:--:|-----|:--:|:---:|:---:|:--:|:---:|:---:|:--:|------|');
   for (let i=0;i<Math.min(30,results.length);i++) {
-    let r=results[i], star=r.score>=70?'⭐':'', star2=r.score>=80?'🔥':'';
-    console.log(`| ${i+1} | ${star2}${star}**${r.symbol}** | ${r.score} | ${r.amp} | ${r.adx} | ${r.bb} | ${r.volS} | ${r.stochX} | ${r.vol24h} |`);
+    let r=results[i], raw=r.raw;
+    let icon = r.bullish ? '🟢' : '🔴';
+    let star = r.score>=60 ? (r.score>=70 ? '🔥' : '⭐') : '';
+    let warns = r.warnings.length ? r.warnings.join(' ') : '—';
+    console.log(`| ${i+1} | ${star}${r.symbol} | ${r.score} | ${r.amp} | ${r.adx} | ${r.bb} | ${r.volS} | ${r.stochX} | ${icon} | ${warns} |`);
   }
 
-  console.log(`\n> 共 ${results.length} 个候选币种 | 筛选标准: 振幅${AMPL_MIN}-${AMPL_MAX}% ADX<25 无异动放量\n`);
+  console.log(`\n> ${results.length} 个候选 | 🟢=多头排列 🔴=空头 | 振幅${AMPL_MIN}-${AMPL_MAX}% ADX<25\n`);
 
-  if (results.length >= 3) {
-    console.log('### 🎯 推荐 Top 3');
-    for (let i=0;i<Math.min(3,results.length);i++) {
-      let r=results[i], raw=r.raw;
-      console.log(`- **${r.symbol}** — ${r.score}分 (振幅${raw.s1}+震荡${raw.s2}+波动${raw.s3}+量${raw.s4}+趋势${raw.s5})`);
+  // Top 3 只推荐多头排列的
+  let longs = results.filter(r=>r.bullish);
+  let picks = longs.length>=3 ? longs : results;
+  if (picks.length >= 3) {
+    console.log('### 🎯 推荐 Top 3（多头排列）');
+    for (let i=0;i<Math.min(3,picks.length);i++) {
+      let r=picks[i], raw=r.raw;
+      console.log(`- **${r.symbol}** — ${r.score}分 (振幅${raw.amp}+震荡${raw.osc}+波动${raw.vol}+量${raw.vol2}+方向${raw.dir})`);
     }
   }
 
